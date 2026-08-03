@@ -1,0 +1,99 @@
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Backup directories
+*_bk/
+*_backup/
+
+# Build toolchain (very large)
+toolchain/riscv_win32/
+toolchain/out/
+toolchain/out_*/
+
+# Build outputs
+*.elf
+*.o
+*.bin
+*.map
+*.lst
+*.hex
+
+# Simulation artifacts
+sim/*.vvp
+sim/*.vcd
+sim/*.log
+sim/*.jou
+sim/*.wlf
+sim/*.tmp
+sim/transcript
+sim/*.gtkw
+sim/*.fst
+
+# Xilinx/Vivado
+par_xilinx/
+.xil/
+vivado_*.backup.jou
+vivado_*.backup.log
+*.cache/
+*.gen/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+NAMEDATABASE/
+*.jou
+*.log
+*.xpr
+*.backup.jou
+*.backup.log
+usage_statistics_webtalk.*
+
+# Vivado build dir (keep srcs/ and constrs_1/)
+build_xilinx/RiscV_WebSoC.cache/
+build_xilinx/RiscV_WebSoC.hw/
+build_xilinx/RiscV_WebSoC.ip_user_files/
+build_xilinx/RiscV_WebSoC.runs/
+build_xilinx/RiscV_WebSoC.sim/
+build_xilinx/vivado*.jou
+build_xilinx/vivado*.log
+build_xilinx/*.backup.jou
+build_xilinx/*.backup.log
+
+# Quartus/Intel
+par_intel/
+par/
+db/
+incremental_db/
+output_files/
+greybox_tmp/
+hwcos/
+*.qws
+*.ddb
+*.bak
+*.qdf
+*.sof
+*.pof
+*.jdi
+*.sld
+*.ipinfo
+*.summary
+*.done
+*.pin
+*.qarlog
+*.smsg
+*.pin_assignment
+*.rpt
+*.chk
+*.stp
+*.qsf_org
+*.prev.si
+*.qst
+*.qsf_bak
+*.tcl~
