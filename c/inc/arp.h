@@ -1,19 +1,61 @@
 #ifndef _ARP_H_
 #define _ARP_H_
-#include "lcpu_general.h"
 
-// ARP单条缓存结构体，只存一台主机
+#include <stdint.h>
+
+#define ARP_ECHO_REPLY      0x0002u
+#define ARP_OPCODE_REQUEST  0x0001u
+#define ARP_OPCODE_REPLY    0x0002u
+
+#pragma pack(push, 1)
+
+// ARP 帧以太网头（14 字节，线上为网络字节序）。
 typedef struct {
-    bool valid;
-    uint32_t ip;
-    uint8_t mac[6];
-} arp_cache_t;
+	uint8_t  dst_mac[6];
+	uint8_t  src_mac[6];
+	uint16_t ether_type; // 0x0806 (ARP)
+} arp_eth_header_t;
 
-// 初始化ARP缓存
-void arp_init(void);
-// 根据IP查询缓存MAC，成功返回1，无缓存返回0
-int arp_get_mac(uint32_t ip, uint8_t *mac);
-// 处理ARP帧，收到请求自动回复应答，返回1处理成功，0忽略
-int arp_process(uint8_t *frame, uint16_t len);
+// ARP 负载（28 字节，线上为网络字节序）。
+typedef struct {
+	uint16_t hardware_type; // 0x0001: Ethernet
+	uint16_t protocol_type; // 0x0800: IPv4
+	uint8_t  hardware_len;  // 6
+	uint8_t  protocol_len;  // 4
+	uint16_t opcode;        // 0x0001 request, 0x0002 reply
+	uint8_t  sender_mac[6];
+	uint8_t  sender_ip[4];
+	uint8_t  target_mac[6];
+	uint8_t  target_ip[4];
+} arp_payload_t;
 
-#endif
+// 完整 ARP 以太网帧（不含 FCS，共 42 字节）。
+typedef struct {
+	arp_eth_header_t eth;
+	arp_payload_t    arp;
+} arp_frame_t;
+
+#pragma pack(pop)
+
+/*
+ * ARP 请求报文（42 字节，不含 FCS）：
+ * eth.dst_mac      = FF:FF:FF:FF:FF:FF（广播）
+ * eth.src_mac      = 请求方 MAC
+ * eth.ether_type   = 0x0806
+ * arp.opcode       = 0x0001
+ * arp.sender_mac/ip= 请求方 MAC/IP
+ * arp.target_mac   = 00:00:00:00:00:00
+ * arp.target_ip    = 被查询的目标 IP
+ *
+ * ARP 响应报文（42 字节，不含 FCS）：
+ * eth.dst_mac      = 请求方 MAC
+ * eth.src_mac      = 响应方（本机）MAC
+ * eth.ether_type   = 0x0806
+ * arp.opcode       = 0x0002
+ * arp.sender_mac/ip= 响应方（本机）MAC/IP
+ * arp.target_mac/ip= 请求方 MAC/IP
+ */
+
+void arp_reply();
+
+#endif // _ARP_H_

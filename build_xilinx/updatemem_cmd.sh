@@ -1,6 +1,6 @@
 #!/bin/bash
-cd /home/haitaoz/work/FPGA_Prj/RiscV_WebSoC2/build_xilinx
-source ~/Xilinx/2024.1/Vivado/2024.1/settings64.sh
+cd /home/minkey/work/FPGA_prj/RiscV_WebSoC2/build_xilinx
+source /home/xilinx/Vivado/2024.1/settings64.sh
 
 updatemem -meminfo RiscV_WebSoC.mmi \
   -data bank0.mem  -proc "u_riscv/riscv_cpu_generation.u_riscv_cpu/u_instru_ram/gen_xilinx_xpm_tdpram.xpm_bank[0].u_xpm_memory_tdpram_bank/xpm_memory_base_inst" \

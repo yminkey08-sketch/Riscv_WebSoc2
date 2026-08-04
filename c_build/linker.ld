@@ -22,6 +22,8 @@ SECTIONS
         *(COMMON)
     } > ROM
 
+    /DISCARD/ : { *(.note*) *(.comment*) }
+
     . = ALIGN(4);
     _end = .;
 }

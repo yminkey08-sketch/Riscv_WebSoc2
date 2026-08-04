@@ -7,7 +7,7 @@ if {[llength $targets] > 0} {
   open_hw_target
   set dev [current_hw_device]
   puts "Device: $dev"
-  set_property PROGRAM.FILE {/home/haitaoz/work/FPGA_Prj/RiscV_WebSoC/build_xilinx/RiscV_WebSoC_fw.bit} $dev
+  set_property PROGRAM.FILE {/home/minkey/work/FPGA_prj/RiscV_WebSoC2/build_xilinx/RiscV_WebSoC_fw.bit} $dev
   program_hw_devices $dev
   puts "PROGRAMMING SUCCESS"
 } else {
