@@ -56,12 +56,13 @@ static void close_connection(int idx) {
 static void fill_tcp_header(int idx, uint8_t flags, uint8_t *hdr) {
     uint32_t i;
     for (i = 0; i < tcp_header_len; i++) hdr[i] = 0;
-    uint16_t sp = connection_src_ports[idx];
-    uint16_t dp = connection_dst_ports[idx];
+    // Response: swap ports — SRC=FPGA(dst_port), DST=PC(src_port)
+    uint16_t dp = connection_dst_ports[idx];  // FPGA port (80)
+    uint16_t sp = connection_src_ports[idx];  // PC port
     uint32_t sq = connection_seq_nums[idx];
     uint32_t ak = connection_ack_nums[idx];
-    hdr[0] = (sp >> 8) & 0xFF;  hdr[1] = sp & 0xFF;
-    hdr[2] = (dp >> 8) & 0xFF;  hdr[3] = dp & 0xFF;
+    hdr[0] = (dp >> 8) & 0xFF;  hdr[1] = dp & 0xFF;  // SRC = FPGA port
+    hdr[2] = (sp >> 8) & 0xFF;  hdr[3] = sp & 0xFF;  // DST = PC port
     hdr[4] = (sq >> 24) & 0xFF; hdr[5] = (sq >> 16) & 0xFF;
     hdr[6] = (sq >> 8) & 0xFF;  hdr[7] = sq & 0xFF;
     hdr[8] = (ak >> 24) & 0xFF; hdr[9] = (ak >> 16) & 0xFF;
@@ -149,14 +150,71 @@ static void tcp_handle_syn(uint16_t sp, uint16_t dp, uint32_t sip, uint32_t sn) 
     send_syn_ack(idx);
 }
 
+// Minimal HTTP response page
+static const char http_header[] =
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Connection: close\r\n"
+    "\r\n";
+static const char html_page[] =
+    "<!DOCTYPE html><html><head><title>FPGA LED Control</title>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<meta charset='UTF-8'>"
+    "<style>body{font-family:Arial;text-align:center;margin:20px;background:#1a1a2e;color:#eee}"
+    "h1{color:#e94560;margin-bottom:10px}a{text-decoration:none}"
+    "button{width:130px;height:50px;margin:6px;font-size:18px;border:none;"
+    "border-radius:8px;cursor:pointer;color:#fff;font-weight:bold}"
+    ".on{background:#2ecc71}.off{background:#e74c3c}"
+    ".led{background:#3498db}</style></head>"
+    "<body><h1>RiscV WebSoC</h1>"
+    "<p>FPGA LED Control - TCP/IP on Artix-7</p>"
+    "<a href='/led/0F'><button class=on>ALL ON</button></a>"
+    "<a href='/led/00'><button class=off>ALL OFF</button></a><br>"
+    "<a href='/led/01'><button class=led>LED 0</button></a>"
+    "<a href='/led/02'><button class=led>LED 1</button></a>"
+    "<a href='/led/04'><button class=led>LED 2</button></a>"
+    "<a href='/led/08'><button class=led>LED 3</button></a>"
+    "</body></html>";
+
+// close_after: piggyback FIN on last segment (avoids back-to-back TX issue)
+static void send_http_response(int ci, int close_after) {
+    uint32_t hlen = sizeof(http_header) - 1;  // exclude null terminator
+    uint32_t plen = sizeof(html_page) - 1;
+    uint32_t total = hlen + plen;
+    uint32_t i;
+
+    // Build and send HTTP header
+    uint8_t buf[hlen + plen];
+    for (i = 0; i < hlen; i++) buf[i] = http_header[i];
+    for (i = 0; i < plen; i++) buf[hlen + i] = html_page[i];
+
+    // Send in TCP segments
+    uint16_t mss = 1024;  // conservative MSS
+    uint32_t offset = 0;
+    while (offset < total) {
+        uint16_t chunk = (total - offset > mss) ? mss : (total - offset);
+        uint8_t hdr[tcp_header_len];
+        uint8_t flags = TCP_FLAG_ACK;
+        if (close_after && (offset + chunk >= total))
+            flags |= TCP_FLAG_FIN;  // piggyback FIN on last segment
+        fill_tcp_header(ci, flags, hdr);
+        uint16_t cs = tcp_checksum(hdr, connection_dst_ips[ci],
+                                   connection_src_ips[ci], &buf[offset], chunk);
+        hdr[16] = (cs >> 8) & 0xFF; hdr[17] = cs & 0xFF;
+        ip_header_update(connection_src_ips[ci], ip_header_len + tcp_header_len + chunk);
+        send_tcp_seg(hdr, &buf[offset], chunk);
+        connection_seq_nums[ci] += chunk;
+        if (flags & TCP_FLAG_FIN) connection_seq_nums[ci]++;  // FIN consumes a seq num
+        offset += chunk;
+    }
+    connection_last_activity[ci] = LCPU_LOCAL_TIME_L();
+}
+
 void tcp_packet_handler(void) {
     uint16_t sp = 0, dp = 0;
     uint32_t sn = 0, an = 0, sip = 0, dip = 0;
     uint8_t  fl;
     uint16_t dlen = 0;
-
-    // LED debug: 进入 tcp_packet_handler 就亮 LED0
-    LCPU_SET_LED(0x01);
 
     LCPU_RD_SET_ADDR(OFF_IP_VER_IHL);
     uint8_t vih = LCPU_RD_DATA8();
@@ -230,7 +288,49 @@ void tcp_packet_handler(void) {
             send_tcp_seg(h, NULL, 0);
             connection_seq_nums[ci]++; connection_states[ci] = TCP_STATE_LAST_ACK;
         } else if ((fl & TCP_FLAG_ACK) && dlen > 0) {
-            if (sn == connection_ack_nums[ci]) { connection_ack_nums[ci] = sn + dlen; send_ack(ci); }
+            if (sn == connection_ack_nums[ci]) {
+                connection_ack_nums[ci] = sn + dlen;
+                uint32_t poff = eth_header_len + ihl + tofs;
+
+                // Check for HTTP GET request
+                LCPU_RD_SET_ADDR(poff);
+                uint8_t c0 = LCPU_RD_DATA8();
+                LCPU_RD_INC_ADDR();
+                uint8_t c1 = LCPU_RD_DATA8();
+                LCPU_RD_INC_ADDR();
+                uint8_t c2 = LCPU_RD_DATA8();
+                LCPU_RD_INC_ADDR();
+                uint8_t c3 = LCPU_RD_DATA8();
+
+                if (c0 == 'G' && c1 == 'E' && c2 == 'T' && c3 == ' ') {
+                    // Read URL path byte 5 (after "GET /")
+                    LCPU_RD_SET_ADDR(poff + 5);
+                    uint8_t p0 = LCPU_RD_DATA8();
+                    // Check for /led/XX path
+                    if (p0 == 'l') {
+                        LCPU_RD_SET_ADDR(poff + 9); // after "GET /led/"
+                        uint8_t h0 = LCPU_RD_DATA8();
+                        LCPU_RD_INC_ADDR();
+                        uint8_t h1 = LCPU_RD_DATA8();
+                        // Parse hex: h0,h1 are ASCII hex chars
+                        uint8_t lv = 0;
+                        if (h0 >= '0' && h0 <= '9') lv = (h0 - '0') << 4;
+                        else if (h0 >= 'A' && h0 <= 'F') lv = (h0 - 'A' + 10) << 4;
+                        else if (h0 >= 'a' && h0 <= 'f') lv = (h0 - 'a' + 10) << 4;
+                        if (h1 >= '0' && h1 <= '9') lv |= (h1 - '0');
+                        else if (h1 >= 'A' && h1 <= 'F') lv |= (h1 - 'A' + 10);
+                        else if (h1 >= 'a' && h1 <= 'f') lv |= (h1 - 'a' + 10);
+                        *((volatile uint32_t*)(LCPU_BASE + 0x10 * 4)) = (uint32_t)(lv & 0x0F);
+                    }
+                    // Send HTTP response with piggybacked FIN, enter FIN_WAIT_1
+                    send_http_response(ci, 1);
+                    connection_states[ci] = TCP_STATE_FIN_WAIT_1;
+                } else {
+                    // LED control: first byte = LED value
+                    *((volatile uint32_t*)(LCPU_BASE + 0x10 * 4)) = (uint32_t)(c0 & 0x0F);
+                    send_ack(ci);
+                }
+            }
             else send_ack(ci);
         }
         break;

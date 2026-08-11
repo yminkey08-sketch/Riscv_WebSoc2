@@ -15,24 +15,18 @@ void reset_entry(void)
 void program_main(void)
 {
     LCPU_SET_LED(0x0F);
+#ifndef SIM_FAST
     volatile uint32_t dly = 5000000;
     while (dly--) { __asm__ volatile("nop"); }
+#endif
     LCPU_SET_LED(0x00);
 
     tcp_connection_init();
 
-    uint32_t led_val = 0x01;
+    uint16_t iptype = 0;
 
     while (1) {
-        {
-            static uint32_t last_toggle = 0;
-            uint32_t now = LCPU_LOCAL_TIME_L();
-            if ((now - last_toggle) >= 50000000UL) {
-                last_toggle = now;
-                LCPU_SET_LED(led_val);
-                led_val = (led_val == 0x08) ? 0x01 : (led_val << 1);
-            }
-        }
+        tcp_periodic_check();
 
         if (LCPU_RD_EMPTY())
             continue;
@@ -49,7 +43,7 @@ void program_main(void)
         if (ptype == ARP_PROC) {
             arp_reply();
         } else if (ptype == IP_PROC) {
-            uint16_t iptype = ip_proc();
+            iptype = ip_proc();
             if (iptype == ICMP_PROC) {
                 icmp_reply();
             } else if (iptype == TCP_PROC) {
