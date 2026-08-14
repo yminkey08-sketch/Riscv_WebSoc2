@@ -87,10 +87,11 @@ int main(int argc, char **argv) {
     VerilatedContext *contextp = new VerilatedContext;
     Vvtop *top = new Vvtop{contextp};
 
-    Verilated::traceEverOn(true);
-    VerilatedVcdC *tfp = new VerilatedVcdC;
-    top->trace(tfp, 99);
-    tfp->open("sim_verilator.vcd");
+    // VCD trace disabled (huge for multi-ms runs; enable only when needed)
+    // Verilated::traceEverOn(true);
+    // VerilatedVcdC *tfp = new VerilatedVcdC;
+    // top->trace(tfp, 99);
+    // tfp->open("sim_verilator.vcd");
 
     // Init inputs (clocks are #delay-generated inside MMCM stub)
     top->clk_50m_in = 0;      // crystal — unused (MMCM free-runs)
@@ -147,6 +148,17 @@ int main(int argc, char **argv) {
     const char http_get[] = "GET / HTTP/1.1\r\nHost: 169.254.1.1\r\nConnection: close\r\n\r\n";
     int http_get_len = (int)strlen(http_get);
 
+    // Second TCP connection (different source port) → GET /led/0F → LED = 0x0F
+    const uint16_t PC_TCP_PORT2 = 12346;
+    const uint32_t PC_SEQ2 = 0x2000;
+    uint8_t syn2_pkt[64];
+    int syn2_len = build_tcp(syn2_pkt, FPGA_MAC, PC_MAC, PC_IP, FPGA_IP,
+                             PC_TCP_PORT2, FPGA_TCP_PORT, PC_SEQ2, 0, 0x02 /*SYN*/, NULL, 0);
+    uint8_t ack2_pkt[64];   int ack2_len = 0;
+    uint8_t http2_pkt[512]; int http2_len = 0;
+    const char http_get_led[] = "GET /led/0F HTTP/1.1\r\nHost: 169.254.1.1\r\nConnection: close\r\n\r\n";
+    int http_get_led_len = (int)strlen(http_get_led);
+
     // Timing constants (ps): 50MHz=20000ps, 125MHz=8000ps
     const vluint64_t RESET_END = 20000;                     // 1 cycle reset
     const vluint64_t ARP_START = RESET_END + 1000*20000;    // wait for firmware init
@@ -159,7 +171,13 @@ int main(int argc, char **argv) {
     const vluint64_t TCP_ACK_END    = TCP_ACK_START + (8+54)*8000;
     const vluint64_t TCP_HTTP_START = 2700000ULL * 1000;    // 2.7ms — after ACK processed
     const vluint64_t TCP_HTTP_END   = TCP_HTTP_START + (8+54+http_get_len)*8000;
-    const vluint64_t SIM_END        = TCP_HTTP_START + 10000000ULL*1000;  // +10ms for HTTP page TX
+    const vluint64_t TCP2_SYN_START  = 10000000ULL * 1000;  // 10ms — after 1st HTTP reply
+    const vluint64_t TCP2_SYN_END    = TCP2_SYN_START + (8+syn2_len)*8000;
+    const vluint64_t TCP2_ACK_START  = 11000000ULL * 1000;  // 11ms
+    const vluint64_t TCP2_ACK_END    = TCP2_ACK_START + (8+54)*8000;
+    const vluint64_t TCP2_HTTP_START = 11200000ULL * 1000;  // 11.2ms
+    const vluint64_t TCP2_HTTP_END   = TCP2_HTTP_START + (8+54+http_get_led_len)*8000;
+    const vluint64_t SIM_END         = TCP2_HTTP_START + 10000000ULL*1000;  // +10ms for 2nd reply
 
     printf("=== RiscV WebSoC2 + #delay 125MHz clock ===\n\n");
 
@@ -176,6 +194,7 @@ int main(int argc, char **argv) {
     int txbuf_len = 0;
     vluint64_t last_tx_cap = 0;
     int tx_pkt_idx = 0;
+    int prev_led = -1;
 
     while (!contextp->gotFinish()) {
         top->eval();
@@ -208,6 +227,12 @@ int main(int argc, char **argv) {
                 pkt = ack_pkt; pkt_len = ack_len; pkt_start = TCP_ACK_START;
             } else if (t >= TCP_HTTP_START && t < TCP_HTTP_END && http_len > 0) {
                 pkt = http_pkt; pkt_len = http_len; pkt_start = TCP_HTTP_START;
+            } else if (t >= TCP2_SYN_START && t < TCP2_SYN_END) {
+                pkt = syn2_pkt; pkt_len = syn2_len; pkt_start = TCP2_SYN_START;
+            } else if (t >= TCP2_ACK_START && t < TCP2_ACK_END && ack2_len > 0) {
+                pkt = ack2_pkt; pkt_len = ack2_len; pkt_start = TCP2_ACK_START;
+            } else if (t >= TCP2_HTTP_START && t < TCP2_HTTP_END && http2_len > 0) {
+                pkt = http2_pkt; pkt_len = http2_len; pkt_start = TCP2_HTTP_START;
             }
             if (pkt) {
                 vluint64_t byte_idx = (t - pkt_start) / 8000;
@@ -233,6 +258,11 @@ int main(int argc, char **argv) {
                 printf("[%llu ns] cpu_rd_empty %d->%d\n", (unsigned long long)(t/1000), prev_rd_empty, rd);
                 prev_rd_empty = rd;
             }
+            int led = (int)(top->led_o & 0xF);
+            if (led != prev_led) {
+                printf("[%llu ns] LED %x->%x\n", (unsigned long long)(t/1000), prev_led & 0xF, led);
+                prev_led = led;
+            }
             if (tx != prev_tx_en) {
                 printf("[%llu ns] gmii_tx_en %d->%d\n", (unsigned long long)(t/1000), prev_tx_en, tx);
                 if (tx && tx_started < 0) tx_started = (int)(t/1000);
@@ -242,16 +272,27 @@ int main(int argc, char **argv) {
                     printf("\n");
                     // Parse TCP SYN+ACK (ethertype=0800 @20, IP proto=6 @31, flags SYN|ACK @55)
                     if (txbuf_len > 55 && txbuf[20] == 0x08 && txbuf[21] == 0x00 &&
-                        txbuf[31] == 6 && (txbuf[55] & 0x12) == 0x12 && ack_len == 0) {
+                        txbuf[31] == 6 && (txbuf[55] & 0x12) == 0x12) {
+                        uint16_t dst_port = (txbuf[44] << 8) | txbuf[45];
                         uint32_t fpga_seq = ((uint32_t)txbuf[46] << 24) | ((uint32_t)txbuf[47] << 16) |
                                             ((uint32_t)txbuf[48] << 8) | txbuf[49];
-                        printf("  [parsed SYN+ACK: fpga_seq=0x%08x]\n", fpga_seq);
-                        ack_len = build_tcp(ack_pkt, FPGA_MAC, PC_MAC, PC_IP, FPGA_IP,
-                                            PC_TCP_PORT, FPGA_TCP_PORT, PC_SEQ + 1, fpga_seq + 1,
-                                            0x10 /*ACK*/, NULL, 0);
-                        http_len = build_tcp(http_pkt, FPGA_MAC, PC_MAC, PC_IP, FPGA_IP,
-                                             PC_TCP_PORT, FPGA_TCP_PORT, PC_SEQ + 1, fpga_seq + 1,
-                                             0x18 /*ACK|PSH*/, (const uint8_t*)http_get, http_get_len);
+                        if (dst_port == PC_TCP_PORT && ack_len == 0) {
+                            printf("  [parsed SYN+ACK#1: fpga_seq=0x%08x]\n", fpga_seq);
+                            ack_len = build_tcp(ack_pkt, FPGA_MAC, PC_MAC, PC_IP, FPGA_IP,
+                                                PC_TCP_PORT, FPGA_TCP_PORT, PC_SEQ + 1, fpga_seq + 1,
+                                                0x10 /*ACK*/, NULL, 0);
+                            http_len = build_tcp(http_pkt, FPGA_MAC, PC_MAC, PC_IP, FPGA_IP,
+                                                 PC_TCP_PORT, FPGA_TCP_PORT, PC_SEQ + 1, fpga_seq + 1,
+                                                 0x18 /*ACK|PSH*/, (const uint8_t*)http_get, http_get_len);
+                        } else if (dst_port == PC_TCP_PORT2 && ack2_len == 0) {
+                            printf("  [parsed SYN+ACK#2: fpga_seq=0x%08x]\n", fpga_seq);
+                            ack2_len = build_tcp(ack2_pkt, FPGA_MAC, PC_MAC, PC_IP, FPGA_IP,
+                                                 PC_TCP_PORT2, FPGA_TCP_PORT, PC_SEQ2 + 1, fpga_seq + 1,
+                                                 0x10 /*ACK*/, NULL, 0);
+                            http2_len = build_tcp(http2_pkt, FPGA_MAC, PC_MAC, PC_IP, FPGA_IP,
+                                                  PC_TCP_PORT2, FPGA_TCP_PORT, PC_SEQ2 + 1, fpga_seq + 1,
+                                                  0x18 /*ACK|PSH*/, (const uint8_t*)http_get_led, http_get_led_len);
+                        }
                     }
                     txbuf_len = 0;
                     tx_pkt_idx++;
@@ -339,7 +380,7 @@ int main(int argc, char **argv) {
                 prev_rpkt_pop = rpkt_pop;
             }
 
-            if (tfp) tfp->dump(t);
+            // if (tfp) tfp->dump(t);
 
             // Stop after both packets + margin
             if (t > SIM_END) break;
