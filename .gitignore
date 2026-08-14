@@ -97,3 +97,7 @@ hwcos/
 *.qst
 *.qsf_bak
 *.tcl~
+
+# Verilator
+obj_dir/
+*.vcd

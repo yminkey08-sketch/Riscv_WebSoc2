@@ -57,10 +57,7 @@ uint16 ip_proc() {
 
     if (ip_protocol_type == IP_PROTOCOL_ICMP) return ICMP_PROC;
     if (ip_protocol_type == IP_PROTOCOL_UDP)  return UDP_PROC;
-    if (ip_protocol_type == IP_PROTOCOL_TCP) {
-        LCPU_SET_LED(0x02);  // LED debug: 检测到TCP
-        return TCP_PROC;
-    }
+    if (ip_protocol_type == IP_PROTOCOL_TCP)  return TCP_PROC;
 
     return NO_PROC;
 }

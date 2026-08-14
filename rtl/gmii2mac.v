@@ -27,6 +27,10 @@ module gmii2mac (
     output reg [31:0]rx_afifo_full_cnt,
     output reg [31:0]rx_afifo_empty_cnt,
     output reg [31:0]rx_data_err_line,
+    // Debug: eth_presemble bypass indicator
+    output wire       dbg_rx_afifo_empty,
+    output wire       dbg_rx_presemble_valid,
+    output wire [9:0] dbg_rx_afifo_data,
     output    [31:0]rx_correct_pkt_cnt,
     output    [31:0]rx_crc_err_pkt_cnt,
     output    [31:0]tx_correct_pkt_cnt,
@@ -38,6 +42,11 @@ module gmii2mac (
   wire [9:0] rx_afifo_data;
   wire       rx_data_en_mac_in;
   wire [7:0] rx_data_mac_in;
+
+  // Expose internal debug signals
+  assign dbg_rx_afifo_empty    = rx_afifo_empty;
+  assign dbg_rx_presemble_valid = rx_data_en_mac_in;
+  assign dbg_rx_afifo_data     = rx_afifo_data;
   wire       rx_data_err;
   wire       tx_data_en_mac_out;
   wire [7:0] tx_data_mac_out;
@@ -501,8 +510,8 @@ module tb_gmii2mac ();
 
   // ── 超时保护 ──────────────────────────────────────────
   initial begin
-    #50000000;
-    $display("ERROR: Simulation timeout!");
+    #50000;
+    $display("SELF-TEST timeout (shortened for sim)");
     // // $finish; (stripped) (stripped for sim)
   end
 

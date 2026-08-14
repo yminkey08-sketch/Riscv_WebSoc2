@@ -64,7 +64,17 @@ module cpu_channel #(
     input  [cpu_buf_data_width-1:0] cpu_wr_wdata,
     input    cpu_wr_wpkt_push,
     input  [cpu_buf_addr_width:0]   cpu_wr_wpkt_len,
-    input  [cpu_buf_para_width-1:0] cpu_wr_wpkt_para
+    input  [cpu_buf_para_width-1:0] cpu_wr_wpkt_para,
+
+    // Debug
+    output [cpu_buf_addr_width:0]   dbg_mac_in_wpkt_len,
+    output                          dbg_mac_in_wpkt_push,
+    output                          dbg_para_wen,
+    output [cpu_buf_addr_width:0]   dbg_para_len,
+    output                          dbg_para_full_reg,
+    output                          dbg_rpkt_pop,
+    output [cpu_buf_addr_width:0]   dbg_rpkt_para_len,
+    output [cpu_buf_addr_width:0]   dbg_rpkt_para_data_r_len
 );
 
   //============================================================================
@@ -132,6 +142,8 @@ module cpu_channel #(
   assign dbg_fifo_wdata = mac_in_wdata;
   assign dbg_fifo_wen   = mac_in_wen;
   assign dbg_fifo_push  = mac_in_wpkt_push & frame_hit;
+  assign dbg_mac_in_wpkt_len  = mac_in_wpkt_len;
+  assign dbg_mac_in_wpkt_push = mac_in_wpkt_push;
 
   //============================================================================
   // 4. 丢包计数 (饱和保护)
@@ -174,7 +186,13 @@ module cpu_channel #(
       .ren      (cpu_rd_ren),
       .raddr    (cpu_rd_raddr),
       .rdata    (cpu_rd_rdata),
-      .reop_pre (cpu_rd_reop_pre)
+      .reop_pre (cpu_rd_reop_pre),
+      .dbg_para_wen      (dbg_para_wen),
+      .dbg_para_len      (dbg_para_len),
+      .dbg_para_full_reg (dbg_para_full_reg),
+      .dbg_rpkt_pop      (dbg_rpkt_pop),
+      .dbg_rpkt_para_len (dbg_rpkt_para_len),
+      .dbg_rpkt_para_data_r_len(dbg_rpkt_para_data_r_len)
   );
 
   //============================================================================

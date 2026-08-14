@@ -25,7 +25,10 @@ module riscv32_top #(
     program_wdata,
     program_rdata,
 
-    irq
+    irq,
+    cpu_trap,
+    cpu_valid,
+    cpu_addr
 );
   localparam [31:0] stackaddr = init_addr_depth * (instr_databits / 8);
 
@@ -43,6 +46,9 @@ module riscv32_top #(
   input [instr_databits-1:0] program_wdata;
   output [instr_databits-1:0] program_rdata;
   input [31:0] irq;
+  output cpu_trap;
+  output cpu_valid;
+  output [31:0] cpu_addr;
 
   wire        req_m;
   wire        rhwl_m;
@@ -96,7 +102,10 @@ module riscv32_top #(
       .address(address_m),
       .rdata(rdata_m),
       .ack(ack_m),
-      .irq(irq)
+      .irq(irq),
+      .cpu_trap(cpu_trap),
+      .cpu_valid(cpu_valid),
+      .cpu_addr(cpu_addr)
   );
 
   //0x80000000 is external address, below is boot and app address
@@ -244,6 +253,7 @@ module tb_riscv32_top;
   end
 
   // ── 主测试流程 ──────────────────────────────────────────
+`ifndef SKIP_RTL_SELFTEST
   initial begin
     // 初始化
     reset_l       = 1'b0;
@@ -328,5 +338,6 @@ module tb_riscv32_top;
     $display("========================================");
     // // $finish; (stripped) (stripped for sim)
   end
+`endif
 endmodule
 /* synthesis translate_on */

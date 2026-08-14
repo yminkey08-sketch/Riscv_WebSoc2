@@ -32,8 +32,66 @@ module webserver_cpu_top #(
     output wire       uart_tx,
 
     // LED
-    output wire [3:0] led_o
+    output wire [3:0] led_o,
+
+    // GMII debug (sim_mod=1 时有效，直连 MAC)
+    input  wire       sim_gmii_rx_clk,
+    input  wire [7:0] sim_gmii_rxd,
+    input  wire       sim_gmii_rx_dv,
+    output wire [7:0] sim_gmii_txd,
+    output wire       sim_gmii_tx_en,
+    // Debug signals
+    output wire       sim_cpu_rd_empty,
+    output wire       sim_gmii_rx_dv_out,
+
+    // MAC-level debug probes (for soft_ila in Verilator sim)
+    output wire       dbg_mac_rx_sop,
+    output wire       dbg_mac_rx_en,
+    output wire [7:0] dbg_mac_rx_data,
+    output wire       dbg_mac_rx_eop,
+    // gmii2mac internal debug probes
+    output wire       dbg_rx_afifo_empty,
+    output wire       dbg_rx_presemble_valid,
+    output wire [9:0] dbg_rx_afifo_data,
+    // MAC TX debug probes
+    output wire       dbg_mac_tx_sop,
+    output wire       dbg_mac_tx_en,
+    output wire [7:0] dbg_mac_tx_data,
+    output wire       dbg_mac_tx_eop,
+    // CPU bus debug probes
+    output wire       dbg_bus_req,
+    output wire       dbg_bus_rhwl,
+    output wire [31:0] dbg_bus_address,
+    output wire [31:0] dbg_bus_wdata,
+    output wire [31:0] dbg_bus_rdata,
+    output wire        dbg_cpu_trap,
+    output wire        dbg_cpu_valid,
+    output wire [31:0] dbg_cpu_addr,
+    output wire [12:0] dbg_mac_in_wpkt_len,
+    output wire        dbg_mac_in_wpkt_push,
+    output wire        dbg_para_wen,
+    output wire [12:0] dbg_para_len,
+    output wire        dbg_para_full_reg,
+    output wire        dbg_rpkt_pop,
+    output wire [12:0] dbg_rpkt_para_len,
+    output wire [12:0] dbg_rpkt_para_data_r_len
 );
+
+assign sim_cpu_rd_empty   = cpu_rd_empty;
+assign sim_gmii_rx_dv_out = sim_mod ? sim_gmii_rx_dv : gmii_rx_dv;
+assign dbg_mac_rx_sop     = mac_rx_sop;
+assign dbg_mac_rx_en      = mac_rx_en;
+assign dbg_mac_rx_data    = mac_rx_data;
+assign dbg_mac_rx_eop     = mac_rx_eop;
+assign dbg_mac_tx_sop     = mac_tx_sop;
+assign dbg_mac_tx_en      = mac_tx_en;
+assign dbg_mac_tx_data    = mac_tx_data;
+assign dbg_mac_tx_eop     = mac_tx_eop;
+assign dbg_bus_req        = bus_req;
+assign dbg_bus_rhwl       = bus_rhwl;
+assign dbg_bus_address    = bus_address;
+assign dbg_bus_wdata      = bus_wdata;
+assign dbg_bus_rdata      = bus_rdata;
 
   //============================================================================
   // 参数
@@ -206,13 +264,21 @@ module webserver_cpu_top #(
   //============================================================================
   // 3. gmii2mac — MAC 层
   //============================================================================
+  // sim_mod=1 时旁路 RGMII 桥，直接用外部 GMII 信号
+  wire        mac_rx_clk = sim_mod ? sim_gmii_rx_clk : gmii_rx_clk;
+  wire [7:0]  mac_rxd    = sim_mod ? sim_gmii_rxd    : gmii_rxd;
+  wire        mac_rx_dv  = sim_mod ? sim_gmii_rx_dv  : gmii_rx_dv;
+  wire        mac_rx_er  = sim_mod ? 1'b0            : gmii_rx_er;
+  assign sim_gmii_txd   = gmii_txd;
+  assign sim_gmii_tx_en = gmii_tx_en;
+
   gmii2mac u_gmii2mac (
       .clk        (clk_125m),
       .reset_l    (sys_rst_n),
-      .Eth_RXC    (gmii_rx_clk),
-      .Eth_RXDV   (gmii_rx_dv),
-      .Eth_RXER   (gmii_rx_er),
-      .Eth_RXD    (gmii_rxd),
+      .Eth_RXC    (mac_rx_clk),
+      .Eth_RXDV   (mac_rx_dv),
+      .Eth_RXER   (mac_rx_er),
+      .Eth_RXD    (mac_rxd),
       .Eth_TXD    (gmii_txd),
       .Eth_TXEN   (gmii_tx_en),
       .Eth_TXER   (gmii_tx_er),
@@ -229,6 +295,9 @@ module webserver_cpu_top #(
       .rx_afifo_full_cnt (),
       .rx_afifo_empty_cnt(),
       .rx_data_err_line  (),
+      .dbg_rx_afifo_empty(dbg_rx_afifo_empty),
+      .dbg_rx_presemble_valid(dbg_rx_presemble_valid),
+      .dbg_rx_afifo_data(dbg_rx_afifo_data),
       .rx_correct_pkt_cnt(),
       .rx_crc_err_pkt_cnt(),
       .tx_correct_pkt_cnt(),
@@ -280,7 +349,15 @@ module webserver_cpu_top #(
       .recv_pkt_drop_cnt(),
       .dbg_fifo_wdata  (),
       .dbg_fifo_wen    (),
-      .dbg_fifo_push   ()
+      .dbg_fifo_push   (),
+      .dbg_mac_in_wpkt_len (dbg_mac_in_wpkt_len),
+      .dbg_mac_in_wpkt_push(dbg_mac_in_wpkt_push),
+      .dbg_para_wen       (dbg_para_wen),
+      .dbg_para_len       (dbg_para_len),
+      .dbg_para_full_reg  (dbg_para_full_reg),
+      .dbg_rpkt_pop       (dbg_rpkt_pop),
+      .dbg_rpkt_para_len  (dbg_rpkt_para_len),
+      .dbg_rpkt_para_data_r_len(dbg_rpkt_para_data_r_len)
   );
 
   //============================================================================
@@ -317,7 +394,10 @@ module webserver_cpu_top #(
       .wdata          (bus_wdata),
       .address        (bus_address),
       .ack            (bus_ack),
-      .rdata          (bus_rdata)
+      .rdata          (bus_rdata),
+      .cpu_trap(dbg_cpu_trap),
+      .cpu_valid(dbg_cpu_valid),
+      .cpu_addr(dbg_cpu_addr)
   );
 
   //============================================================================

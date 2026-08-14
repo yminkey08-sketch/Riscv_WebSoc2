@@ -60,7 +60,6 @@ uint16 eth_proc()
         LCPU_WR_BYTE(OFF_ETH_TYPE,     (eth_type >> 8) & 0xFF);
         LCPU_WR_BYTE(OFF_ETH_TYPE + 1, (eth_type >> 0) & 0xFF);
 
-        LCPU_SET_LED(0x04);  // LED debug: IP packet detected
         return IP_PROC;
     }
     else {

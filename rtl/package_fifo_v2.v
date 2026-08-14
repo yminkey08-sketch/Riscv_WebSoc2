@@ -51,7 +51,15 @@ module package_fifo_v2 #(
 
     // 错误标志
     output reg overflow,
-    output reg underflow
+    output reg underflow,
+
+    // Debug
+    output dbg_para_wen,
+    output [addr_width:0] dbg_para_len,
+    output dbg_para_full_reg,
+    output dbg_rpkt_pop,
+    output [addr_width:0] dbg_rpkt_para_len,
+    output dbg_rpkt_para_data_r_len
 );
 
   // ============================================================
@@ -334,7 +342,7 @@ module package_fifo_v2 #(
           nb_rptr_reg      <= {addr_width{1'b0}};
         end else if (rclk_en) begin
           rpkt_pop_d0 <= rpkt_pop;
-          if (rpkt_pop_d0) begin
+          if (rpkt_pop) begin
             rpkt_para_data_r <= rpkt_para_data;
             nb_rptr_reg <= rpkt_para_data[NB_PARA_FIFO_WIDTH-1:para_width+addr_width+1] + rpkt_para_data[addr_width:0];
           end
@@ -343,6 +351,14 @@ module package_fifo_v2 #(
 
       assign rpkt_len  = rpkt_para_data_r[addr_width:0];
       assign rpkt_para = rpkt_para_data_r[para_width+addr_width:addr_width+1];
+
+      // Debug
+      assign dbg_para_wen      = para_wen_r;
+      assign dbg_para_len      = para_wdata_r[addr_width:0];
+      assign dbg_para_full_reg = full_reg;
+      assign dbg_rpkt_pop      = rpkt_pop;
+      assign dbg_rpkt_para_len = rpkt_para_data[addr_width:0];
+      assign dbg_rpkt_para_data_r_len = rpkt_para_data_r[addr_width:0];
 
       wire [addr_width:0] avail_space;
       wire [addr_width:0] wptr_ext;
@@ -410,7 +426,7 @@ module package_fifo_v2 #(
 
       always @(negedge reset_l or posedge rclk) begin
         if (reset_l == 1'b0) nb_rptr_for_data <= {addr_width{1'b0}};
-        else if (rclk_en && rpkt_pop_d0)
+        else if (rclk_en && rpkt_pop)
           nb_rptr_for_data <= rpkt_para_data[NB_PARA_FIFO_WIDTH-1:para_width+addr_width+1];
       end
 

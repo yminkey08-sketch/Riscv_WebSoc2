@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define MAX_CONNECTIONS   4
+#define MAX_CONNECTIONS   8
 
 #define TCP_STATE_CLOSED       0
 #define TCP_STATE_LISTEN       1

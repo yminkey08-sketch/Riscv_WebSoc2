@@ -15,7 +15,11 @@ module riscv32_localbus #(
     input  [31:0] rdata,
     input         ack,
 
-    input [31:0] irq
+    input [31:0] irq,
+
+    output        cpu_trap,
+    output        cpu_valid,
+    output [31:0] cpu_addr
 );
 
   wire        rv_valid;
@@ -65,8 +69,12 @@ module riscv32_localbus #(
       .mem_wdata(rv_wdata),
       .mem_wstrb(rv_wstrb),
       .mem_rdata(rv_rdata),
-      .irq(irq)
+      .irq(irq),
+      .trap(cpu_trap)
   );
+
+  assign cpu_valid = rv_valid;
+  assign cpu_addr  = rv_addr;
 
   riscv32intfbridge u_RiscV32IntfBridge (
       .clk(clk),

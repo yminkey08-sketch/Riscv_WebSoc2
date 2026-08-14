@@ -24,6 +24,10 @@ module lcpu_riscv_wrapper #(
 
     // RISC-V reset control (from outside)
     input                        riscv_reset_l,
+    // CPU debug
+    output                       cpu_trap,
+    output                       cpu_valid,
+    output [31:0]                cpu_addr,
     // unified program RAM interface (shared by riscv32_top and cpu_reg)
     input                        pram_wr,
     input  [init_addr_width-1:0] pram_addr,
@@ -118,7 +122,10 @@ module lcpu_riscv_wrapper #(
           .program_waddr(pram_addr[init_addr_width-1:0]),
           .program_wdata(pram_wdata),
           .program_rdata(pram_rdata),
-          .irq          (32'b0)
+          .irq          (32'b0),
+          .cpu_trap(cpu_trap),
+          .cpu_valid(cpu_valid),
+          .cpu_addr(cpu_addr)
       );
 
     end else begin : riscv_cpu_disabled
@@ -128,6 +135,9 @@ module lcpu_riscv_wrapper #(
       assign riscv_address = 32'b0;
       assign riscv_ack     = 1'b0;
       assign riscv_rdata   = 32'b0;
+      assign cpu_trap  = 1'b0;
+      assign cpu_valid = 1'b0;
+      assign cpu_addr  = 32'b0;
     end
   endgenerate
 

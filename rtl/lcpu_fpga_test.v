@@ -446,7 +446,7 @@ module lcpu_fpga_test(
         reg_rdata[0:0]<=pll_locked;
         reg_ack <= 1'b1;
       end
-      if(req == 1'b1 && address == 32'h6000)begin 
+      if(req == 1'b1 && address == 32'h6000)begin
         reg_rdata[0:0]<=cpu_rd_empty;
         reg_ack <= 1'b1;
       end
@@ -454,7 +454,7 @@ module lcpu_fpga_test(
         reg_rdata[0:0]<=cpu_rd_rpkt_pop;
         reg_ack <= 1'b1;
       end
-      if(req == 1'b1 && address == 32'h6002)begin 
+      if(req == 1'b1 && address == 32'h6002)begin
         reg_rdata[31:0]<=cpu_rd_rpkt_len;
         reg_ack <= 1'b1;
       end
@@ -470,7 +470,7 @@ module lcpu_fpga_test(
         reg_rdata[31:0]<=cpu_rd_raddr;
         reg_ack <= 1'b1;
       end
-      if(req == 1'b1 && address == 32'h6006)begin 
+      if(req == 1'b1 && address == 32'h6006)begin
         reg_rdata[31:0]<=cpu_rd_rdata;
         reg_ack <= 1'b1;
       end
